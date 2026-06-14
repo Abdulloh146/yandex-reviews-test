@@ -21,22 +21,32 @@ class YandexMapsParserService
             mkdir($tempPath, 0777, true);
         }
 
+        $nodePath = $this->findNodePath();
+
+        $env = array_merge($_ENV, $_SERVER, [
+            'TEMP' => $tempPath,
+            'TMP' => $tempPath,
+            'TMPDIR' => $tempPath,
+            'NODE_OPTIONS' => '',
+            'SystemRoot' => getenv('SystemRoot') ?: 'C:\\Windows',
+            'WINDIR' => getenv('WINDIR') ?: 'C:\\Windows',
+            'PATH' => getenv('PATH') ?: ($_SERVER['PATH'] ?? ''),
+            'USERPROFILE' => getenv('USERPROFILE') ?: 'C:\\Users\\ABOBUS',
+            'LOCALAPPDATA' => getenv('LOCALAPPDATA') ?: 'C:\\Users\\ABOBUS\\AppData\\Local',
+        ]);
+
         $process = new Process(
             [
-                'node',
+                $nodePath,
                 $scriptPath,
                 $url,
             ],
             base_path(),
-            [
-                'TEMP' => $tempPath,
-                'TMP' => $tempPath,
-                'TMPDIR' => $tempPath,
-                'NODE_OPTIONS' => '',
-            ]
+            $env
         );
 
-        $process->setTimeout(120);
+        $process->setTimeout(300);
+        $process->setIdleTimeout(300);
         $process->run();
 
         $output = trim($process->getOutput());
@@ -63,5 +73,22 @@ class YandexMapsParserService
         }
 
         return $decoded['data'];
+    }
+
+    private function findNodePath(): string
+    {
+        $possiblePaths = [
+            'C:\\Program Files\\nodejs\\node.exe',
+            'C:\\Program Files (x86)\\nodejs\\node.exe',
+            'node',
+        ];
+
+        foreach ($possiblePaths as $path) {
+            if ($path === 'node' || file_exists($path)) {
+                return $path;
+            }
+        }
+
+        return 'node';
     }
 }
