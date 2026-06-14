@@ -13,7 +13,7 @@ class AuthController extends Controller
     public function login(Request $request): JsonResponse
     {
         $credentials = $request->validate([
-            'email' => ['required', 'email'],
+            'email'    => ['required', 'email'],
             'password' => ['required', 'string'],
         ]);
 
@@ -23,11 +23,14 @@ class AuthController extends Controller
             ]);
         }
 
-        $request->session()->regenerate();
+        $user = $request->user();
+
+        $token = $user->createToken('api-token')->plainTextToken;
 
         return response()->json([
             'message' => 'Logged in successfully',
-            'user' => $request->user(),
+            'token'   => $token,
+            'user'    => $user,
         ]);
     }
 
@@ -40,10 +43,7 @@ class AuthController extends Controller
 
     public function logout(Request $request): JsonResponse
     {
-        Auth::guard('web')->logout();
-
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
+        $request->user()?->currentAccessToken()?->delete();
 
         return response()->json([
             'message' => 'Logged out successfully',
