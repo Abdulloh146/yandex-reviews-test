@@ -71,14 +71,26 @@ async function main() {
 
         await page.waitForTimeout(3000);
 
+        const debugDir = path.join(process.cwd(), 'storage', 'app', 'parser-debug');
+        fs.mkdirSync(debugDir, { recursive: true });
+
+        await page.screenshot({
+            path: path.join(debugDir, 'yandex-page.png'),
+            fullPage: true,
+        });
+
+        fs.writeFileSync(
+            path.join(debugDir, 'yandex-page.html'),
+            await page.content(),
+            'utf8'
+        );
+
         const title = await page.title();
 
         console.log(JSON.stringify(
             fallbackData(title || 'Yandex Organization')
         ));
     } catch (error) {
-        // Hozircha test flow buzilmasligi uchun DNS/Yandex xatosida fallback qaytaramiz.
-        // Real parser bosqichida bu joyda structured error qaytaramiz.
         if (
             error.message.includes('ERR_NAME_NOT_RESOLVED') ||
             error.message.includes('ERR_CONNECTION') ||
