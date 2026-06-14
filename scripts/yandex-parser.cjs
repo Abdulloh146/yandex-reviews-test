@@ -185,23 +185,42 @@ function parseReviewFromRaw(raw) {
         return null;
     }
 
+    const bannedAuthors = [
+        'Included in the Ultima Guide',
+        'Menyu',
+        'Sharh',
+        'Restoran',
+        'Restoran, qahvaxona',
+        'Restoran, bar',
+        'Restoran, banket zali',
+        'Qahvaxona, restoran',
+        'Bungacha ochiq',
+        'Reyting',
+        'Marshrut',
+        'Manzil',
+        'Biznes uchun',
+        'Tashrif buyuruvchanlik va ish rejimi',
+        'Promo',
+    ];
+
+    if (bannedAuthors.some(item => authorName.toLowerCase().includes(item.toLowerCase()))) {
+        return null;
+    }
+
     const reviewDate = parseReviewDate(lines);
 
     lines = cleanReviewLines(lines);
 
     let textLines = [...lines];
 
-    // authorni olib tashlaymiz
     if (textLines[0] === authorName) {
         textLines.shift();
     }
 
-    // date line bo‘lsa olib tashlaymiz
     if (reviewDate) {
         textLines = textLines.filter(line => line !== reviewDate);
     }
 
-    // juda qisqa yoki faqat status bo‘lgan qatorlarni olib tashlaymiz
     textLines = textLines.filter(line => {
         if (line.length < 3) return false;
         if (/^\d\s*-?\s*darajadagi/i.test(line)) return false;
@@ -211,6 +230,29 @@ function parseReviewFromRaw(raw) {
     const text = textLines.join('\n').trim();
 
     if (!text || text.length < 3) {
+        return null;
+    }
+
+    const bannedTextParts = [
+        'Promo',
+        'Yandex Maps',
+        '© 2001',
+        'Xizmat haqida',
+        'Foydalanuvchi kelishuvi',
+        'Toshkent,',
+        'tumani,',
+        'koʻchasi',
+        'mahalla fuqarolar yigʻini',
+        'Bungacha ochiq',
+        'ta baho',
+        'сўм',
+        'soʻm',
+        'этаж',
+        'Marshrut',
+        'Manzil',
+    ];
+
+    if (bannedTextParts.some(item => text.toLowerCase().includes(item.toLowerCase()))) {
         return null;
     }
 
