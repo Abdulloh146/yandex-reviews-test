@@ -45,8 +45,8 @@ class YandexMapsParserService
             $env
         );
 
-        $process->setTimeout(300);
-        $process->setIdleTimeout(300);
+        $process->setTimeout(600);
+        $process->setIdleTimeout(600);
         $process->run();
 
         $output = trim($process->getOutput());

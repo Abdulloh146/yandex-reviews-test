@@ -23,8 +23,10 @@ class OrganizationController extends Controller
         ]);
     }
 
-    public function store(StoreOrganizationRequest $request): JsonResponse
-    {
+    public function store(
+        StoreOrganizationRequest $request,
+        ParseYandexOrganizationAction $action
+    ): JsonResponse {
         $organization = Organization::query()->updateOrCreate(
             [
                 'user_id' => $request->user()->id,
@@ -43,11 +45,16 @@ class OrganizationController extends Controller
 
         $organization->reviews()->delete();
 
+        $organization = $action->handle($organization);
+
         return response()->json([
-            'message' => 'Organization link saved successfully.',
+            'message' => $organization->parse_status === 'success'
+                ? 'Organization link saved and data parsed successfully.'
+                : 'Organization link saved, but parsing failed.',
             'organization' => $organization,
         ]);
     }
+
     public function refresh(Request $request, ParseYandexOrganizationAction $action): JsonResponse
     {
         $organization = Organization::query()

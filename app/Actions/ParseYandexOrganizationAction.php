@@ -50,6 +50,7 @@ readonly class ParseYandexOrganizationAction
                         'external_id' => $review['external_id'] ?? $contentHash,
                         'author_name' => $review['author_name'] ?? null,
                         'review_date' => $review['review_date'] ?? null,
+                        'review_date_text' => $review['review_date_text'] ?? null,
                         'text' => $review['text'] ?? null,
                         'rating' => $review['rating'] ?? null,
                         'content_hash' => $contentHash,

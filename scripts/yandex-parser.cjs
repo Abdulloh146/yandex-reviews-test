@@ -3,6 +3,9 @@ const path = require('path');
 const crypto = require('crypto');
 const { chromium } = require('playwright');
 
+const MAX_REVIEWS = 600;
+const MAX_SCROLLS = 180;
+
 const tempDir = path.join(process.cwd(), 'storage', 'app', 'playwright-temp');
 fs.mkdirSync(tempDir, { recursive: true });
 
@@ -13,14 +16,17 @@ process.env.TMPDIR = tempDir;
 function normalizeText(text) {
     return String(text || '')
         .replace(/\u00A0/g, ' ')
-        .replace(/\s+/g, ' ')
+        .replace(/[ \t]+/g, ' ')
+        .replace(/\n\s+/g, '\n')
         .trim();
 }
 
 function numberFromText(text) {
     if (!text) return null;
 
-    const match = String(text).replace(',', '.').match(/[1-5](?:\.\d)?/);
+    const match = String(text)
+        .replace(',', '.')
+        .match(/[1-5](?:\.\d)?/);
 
     if (!match) return null;
 
@@ -88,8 +94,8 @@ async function clickByText(page, texts) {
             const locator = page.getByText(text, { exact: false }).first();
 
             if (await locator.count()) {
-                await locator.click({ timeout: 4000 });
-                await page.waitForTimeout(3000);
+                await locator.click({ timeout: 5000 });
+                await page.waitForTimeout(2500);
                 return true;
             }
         } catch (_) {}
@@ -99,22 +105,31 @@ async function clickByText(page, texts) {
 }
 
 async function openReviews(page) {
-    const opened = await clickByText(page, [
+    const openedByText = await clickByText(page, [
         'Отзывы',
         'отзывов',
         'отзыва',
         'отзыв',
         'Fikrlar',
+        'Sharhlar',
         'sharh',
+        'ta sharh',
+        'Barcha sharhlar',
+        'barcha sharhlar',
     ]);
 
-    if (opened) return true;
+    if (openedByText) {
+        return true;
+    }
 
     const selectors = [
         '[aria-label*="Отзывы"]',
         '[aria-label*="отзывы"]',
+        '[aria-label*="Sharh"]',
+        '[aria-label*="sharh"]',
         '[class*="tabs"] [class*="reviews"]',
         '[class*="business-card"] [class*="reviews"]',
+        '[class*="orgpage"] [class*="reviews"]',
     ];
 
     for (const selector of selectors) {
@@ -122,8 +137,8 @@ async function openReviews(page) {
             const locator = page.locator(selector).first();
 
             if (await locator.count()) {
-                await locator.click({ timeout: 4000 });
-                await page.waitForTimeout(3000);
+                await locator.click({ timeout: 5000 });
+                await page.waitForTimeout(2500);
                 return true;
             }
         } catch (_) {}
@@ -132,11 +147,41 @@ async function openReviews(page) {
     return false;
 }
 
-async function scrollPage(page, maxScrolls = 20) {
-    for (let i = 0; i < maxScrolls; i++) {
-        await page.mouse.wheel(0, 2500);
-        await page.waitForTimeout(900);
+async function findScrollableContainer(page) {
+    return await page.evaluateHandle(() => {
+        const elements = Array.from(document.querySelectorAll('*'));
+
+        const scrollables = elements
+            .filter(el => {
+                const style = window.getComputedStyle(el);
+                const overflowY = style.overflowY;
+                const canScroll = el.scrollHeight > el.clientHeight + 250;
+
+                if (!canScroll) return false;
+
+                return overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay';
+            })
+            .sort((a, b) => {
+                const aScore = a.scrollHeight - a.clientHeight;
+                const bScore = b.scrollHeight - b.clientHeight;
+
+                return bScore - aScore;
+            });
+
+        return scrollables[0] || document.scrollingElement || document.body;
+    });
+}
+
+async function scrollInsideContainer(page, container) {
+    try {
+        await container.evaluate(el => {
+            el.scrollTop = el.scrollHeight;
+        });
+    } catch (_) {
+        await page.mouse.wheel(0, 3500);
     }
+
+    await page.waitForTimeout(1300);
 }
 
 function parseReviewDate(lines) {
@@ -152,18 +197,89 @@ function cleanReviewLines(lines) {
         const l = line.toLowerCase();
 
         if (l === 'obuna') return false;
+        if (l === 'подписаться') return false;
         if (l.includes('tashkilot javobini')) return false;
         if (l.includes('ответ организации')) return false;
-        if (l.includes('подписаться')) return false;
         if (l.includes('shahar bilimdoni')) return false;
         if (l.includes('городской знаток')) return false;
         if (/^\d+$/.test(l)) return false;
+        if (/^\d\s*-?\s*darajadagi/i.test(l)) return false;
 
         return true;
     });
 }
 
-function parseReviewFromRaw(raw) {
+function isTrashAuthor(authorName) {
+    const bannedAuthors = [
+        'Included in the Ultima Guide',
+        'Menyu',
+        'Sharh',
+        'Restoran',
+        'Restoran, qahvaxona',
+        'Restoran, bar',
+        'Restoran, banket zali',
+        'Qahvaxona, restoran',
+        'Bungacha ochiq',
+        'Reyting',
+        'Marshrut',
+        'Manzil',
+        'Biznes uchun',
+        'Tashrif buyuruvchanlik',
+        'Promo',
+        'Yandex Maps',
+    ];
+
+    const author = String(authorName || '').toLowerCase();
+
+    return bannedAuthors.some(item => author.includes(item.toLowerCase()));
+}
+
+function isTrashText(text) {
+    const bannedTextParts = [
+        'Promo',
+        'Yandex Maps',
+        '© 2001',
+        'Xizmat haqida',
+        'Foydalanuvchi kelishuvi',
+        'Toshkent,',
+        'tumani,',
+        'koʻchasi',
+        'mahalla fuqarolar yigʻini',
+        'Bungacha ochiq',
+        'ta baho',
+        'сўм',
+        'soʻm',
+        'этаж',
+        'Marshrut',
+        'Manzil',
+        'Yordam',
+        'Xizmat haqida',
+    ];
+
+    const value = String(text || '').toLowerCase();
+
+    return bannedTextParts.some(item => value.includes(item.toLowerCase()));
+}
+
+function parseReviewRating(raw) {
+    const text = String(raw || '');
+
+    const explicitMatch = text.match(/(?:Оценка|Rating|Baho|Reyting)\s*[:：]?\s*([1-5])(?:[.,]0)?/i);
+
+    if (explicitMatch) {
+        return Number(explicitMatch[1]);
+    }
+
+    const starMatch = text.match(/([1-5])\s*(?:из\s*5|\/\s*5)/i);
+
+    if (starMatch) {
+        return Number(starMatch[1]);
+    }
+
+    return null;
+}
+
+function parseReviewFromRaw(raw, fallbackRating = null) {
     const normalizedRaw = String(raw || '').trim();
 
     if (normalizedRaw.length < 20) {
@@ -179,31 +295,26 @@ function parseReviewFromRaw(raw) {
         return null;
     }
 
-    const authorName = lines[0];
+    let authorName = lines[0];
+
+    if (
+        authorName.length > 80 ||
+        authorName.includes('...') ||
+        authorName.includes('Отличная') ||
+        authorName.includes('Отличный') ||
+        authorName.includes('Очень') ||
+        authorName.includes('Хорош') ||
+        authorName.includes('Интересное') ||
+        authorName.includes('Заказывали')
+    ) {
+        return null;
+    }
 
     if (!authorName || authorName.length < 2) {
         return null;
     }
 
-    const bannedAuthors = [
-        'Included in the Ultima Guide',
-        'Menyu',
-        'Sharh',
-        'Restoran',
-        'Restoran, qahvaxona',
-        'Restoran, bar',
-        'Restoran, banket zali',
-        'Qahvaxona, restoran',
-        'Bungacha ochiq',
-        'Reyting',
-        'Marshrut',
-        'Manzil',
-        'Biznes uchun',
-        'Tashrif buyuruvchanlik va ish rejimi',
-        'Promo',
-    ];
-
-    if (bannedAuthors.some(item => authorName.toLowerCase().includes(item.toLowerCase()))) {
+    if (isTrashAuthor(authorName)) {
         return null;
     }
 
@@ -233,54 +344,32 @@ function parseReviewFromRaw(raw) {
         return null;
     }
 
-    const bannedTextParts = [
-        'Promo',
-        'Yandex Maps',
-        '© 2001',
-        'Xizmat haqida',
-        'Foydalanuvchi kelishuvi',
-        'Toshkent,',
-        'tumani,',
-        'koʻchasi',
-        'mahalla fuqarolar yigʻini',
-        'Bungacha ochiq',
-        'ta baho',
-        'сўм',
-        'soʻm',
-        'этаж',
-        'Marshrut',
-        'Manzil',
-    ];
-
-    if (bannedTextParts.some(item => text.toLowerCase().includes(item.toLowerCase()))) {
+    if (isTrashText(text)) {
         return null;
     }
 
-    let rating = null;
+    let rating = parseReviewRating(normalizedRaw);
 
-    const ratingMatch = normalizedRaw.match(/(?:Оценка|Rating|Baho|Reyting)?\s*([1-5])(?:[.,]0)?/i);
-
-    if (ratingMatch) {
-        rating = Number(ratingMatch[1]);
+    if (!rating && fallbackRating) {
+        rating = fallbackRating;
     }
-
     const hash = makeHash(authorName + reviewDate + text + rating);
 
     return {
         external_id: `yandex-${hash}`,
         author_name: authorName,
         review_date: null,
+        review_date_text: reviewDate,
         text,
         rating,
     };
 }
 
-async function extractReviews(page) {
+async function extractReviews(page, fallbackRating = null) {
     const possibleReviewCards = [
-        '[class*="business-review-view__info"]',
         '[class*="business-review-view"]',
-        '[class*="review-snippet"]',
-        '[class*="review-view"]',
+        '[class*="business-review-view__info"]',
+        '[class*="reviews-list-view"] [class*="business-review"]',
         '[data-testid*="review"]',
     ];
 
@@ -292,7 +381,7 @@ async function extractReviews(page) {
             const count = await cards.count();
 
             if (count >= 1) {
-                const limit = Math.min(count, 700);
+                const limit = Math.min(count, 800);
 
                 for (let i = 0; i < limit; i++) {
                     try {
@@ -311,23 +400,10 @@ async function extractReviews(page) {
         } catch (_) {}
     }
 
-    // Agar selectorlar topilmasa, body textdan qo‘pol fallback
-    if (rawReviews.length === 0) {
-        try {
-            const bodyText = await page.locator('body').innerText({ timeout: 3000 });
-            const chunks = bodyText
-                .split(/(?=\n[A-ZА-ЯЁЎҚҒҲa-zа-яёўқғҳ][^\n]{2,40}\n)/)
-                .map(x => x.trim())
-                .filter(x => x.length > 50);
-
-            rawReviews = chunks.slice(0, 100);
-        } catch (_) {}
-    }
-
     const reviews = [];
 
     for (const raw of rawReviews) {
-        const review = parseReviewFromRaw(raw);
+        const review = parseReviewFromRaw(raw, fallbackRating);
 
         if (review) {
             reviews.push(review);
@@ -345,24 +421,72 @@ async function extractReviews(page) {
     return Array.from(unique.values());
 }
 
+async function collectReviewsWithScroll(page, maxReviews = MAX_REVIEWS, fallbackRating = null) {
+    const container = await findScrollableContainer(page);
+
+    const allReviews = new Map();
+
+    let sameCountTimes = 0;
+    let lastCount = 0;
+
+    for (let i = 0; i < MAX_SCROLLS; i++) {
+        const reviews = await extractReviews(page, fallbackRating);
+
+        for (const review of reviews) {
+            if (review.external_id && !allReviews.has(review.external_id)) {
+                allReviews.set(review.external_id, review);
+            }
+        }
+
+        const currentCount = allReviews.size;
+
+        if (currentCount >= maxReviews) {
+            break;
+        }
+
+        if (currentCount === lastCount) {
+            sameCountTimes++;
+        } else {
+            sameCountTimes = 0;
+        }
+
+        if (sameCountTimes >= 10) {
+            break;
+        }
+
+        lastCount = currentCount;
+
+        await scrollInsideContainer(page, container);
+    }
+
+    return Array.from(allReviews.values()).slice(0, maxReviews);
+}
+
 async function extractCounters(page) {
     const pageText = await page.locator('body').innerText().catch(() => '');
 
     let ratingsCount = 0;
     let reviewsCount = 0;
 
+    const normalizedText = pageText
+        .replace(/\u00A0/g, ' ')
+        .replace(/\s+/g, ' ');
+
     const ratingsPatterns = [
-        /(\d[\d\s]*)\s*(оценок|оценки|оценка)/i,
-        /(\d[\d\s]*)\s*(baholar|baho)/i,
+        /(\d[\d\s]*)\s*ta\s*baho/i,
+        /(\d[\d\s]*)\s*(?:baholar|baho)/i,
+        /(\d[\d\s]*)\s*(?:оценок|оценки|оценка)/i,
     ];
 
     const reviewsPatterns = [
-        /(\d[\d\s]*)\s*(отзывов|отзыва|отзыв)/i,
-        /(\d[\d\s]*)\s*(fikr|sharh)/i,
+        /(\d[\d\s]*)\s*ta\s*sharh/i,
+        /(\d[\d\s]*)\s*(?:sharhlar|sharh|fikrlar|fikr)/i,
+        /(\d[\d\s]*)\s*(?:отзывов|отзыва|отзыв)/i,
     ];
 
     for (const pattern of ratingsPatterns) {
-        const match = pageText.match(pattern);
+        const match = normalizedText.match(pattern);
+
         if (match) {
             ratingsCount = intFromText(match[1]);
             break;
@@ -370,7 +494,8 @@ async function extractCounters(page) {
     }
 
     for (const pattern of reviewsPatterns) {
-        const match = pageText.match(pattern);
+        const match = normalizedText.match(pattern);
+
         if (match) {
             reviewsCount = intFromText(match[1]);
             break;
@@ -392,6 +517,7 @@ async function main() {
             success: false,
             error: 'URL is required',
         }));
+
         process.exitCode = 1;
         return;
     }
@@ -456,10 +582,12 @@ async function main() {
         }
 
         await openReviews(page);
-        await scrollPage(page, 25);
+        await page.waitForTimeout(3000);
+
+        const reviews = await collectReviewsWithScroll(page, MAX_REVIEWS, averageRating);
+
         await saveDebug(page);
 
-        const reviews = await extractReviews(page);
         const countersAfterReviews = await extractCounters(page);
 
         const reviewsCount =
@@ -467,10 +595,14 @@ async function main() {
             countersBeforeReviews.reviewsCount ||
             reviews.length;
 
-        const ratingsCount =
+        let ratingsCount =
             countersAfterReviews.ratingsCount ||
             countersBeforeReviews.ratingsCount ||
             0;
+
+        if (!ratingsCount && reviews.length > 0) {
+            ratingsCount = reviews.length;
+        }
 
         console.log(JSON.stringify({
             success: true,

@@ -48,7 +48,7 @@
                             :disabled="saving"
                             class="px-5 py-3 bg-blue-600 text-white rounded-xl font-semibold disabled:opacity-60"
                         >
-                            {{ saving ? 'Сохраняем...' : 'Сохранить' }}
+                            {{ saving ? 'Сохраняем и парсим...' : 'Сохранить' }}
                         </button>
 
                         <button
@@ -132,7 +132,7 @@
                                 {{ review.author_name || 'Аноним' }}
                             </div>
                             <div class="text-sm text-slate-500">
-                                {{ review.review_date || '—' }}
+                                {{ review.review_date_text || review.review_date || '—' }}
                             </div>
                         </div>
 
@@ -217,7 +217,14 @@ async function saveOrganization() {
         });
 
         organization.value = data.organization;
-        success.value = data.message;
+
+        if (data.organization?.parse_status === 'success') {
+            success.value = data.message;
+        } else {
+            error.value = data.organization?.parse_error || data.message || 'Parsing failed.';
+        }
+
+        await loadReviews(1);
     } catch (e) {
         error.value = e.response?.data?.message || 'Ошибка сохранения';
     } finally {

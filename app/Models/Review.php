@@ -12,6 +12,7 @@ class Review extends Model
         'external_id',
         'author_name',
         'review_date',
+        'review_date_text',
         'text',
         'rating',
         'content_hash',
