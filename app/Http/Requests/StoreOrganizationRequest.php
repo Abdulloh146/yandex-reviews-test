@@ -2,28 +2,40 @@
 
 namespace App\Http\Requests;
 
-use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreOrganizationRequest extends FormRequest
 {
-    /**
-     * Determine if the user is authorized to make this request.
-     */
     public function authorize(): bool
     {
-        return false;
+        return true;
     }
 
-    /**
-     * Get the validation rules that apply to the request.
-     *
-     * @return array<string, ValidationRule|array<mixed>|string>
-     */
     public function rules(): array
     {
         return [
-            //
+            'yandex_url' => [
+                'required',
+                'string',
+                'url',
+                'max:2000',
+                function ($attribute, $value, $fail) {
+                    $allowedHosts = [
+                        'yandex.ru',
+                        'yandex.uz',
+                        'yandex.com',
+                        'maps.yandex.ru',
+                        'maps.yandex.uz',
+                        'yandex.com/maps',
+                    ];
+
+                    $host = parse_url($value, PHP_URL_HOST);
+
+                    if (! $host || ! str_contains($host, 'yandex.')) {
+                        $fail('Yandex Maps havolasi noto‘g‘ri.');
+                    }
+                },
+            ],
         ];
     }
 }
