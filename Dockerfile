@@ -5,11 +5,11 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 RUN apt-get update && apt-get install -y \
     git unzip curl ca-certificates gnupg zip \
-    libzip-dev libpng-dev libjpeg-dev libfreetype6-dev libonig-dev libxml2-dev \
+    libzip-dev libsqlite3-dev libpng-dev libjpeg-dev libfreetype6-dev libonig-dev libxml2-dev \
     libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 \
     libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 \
     libpangocairo-1.0-0 libpango-1.0-0 libcairo2 fonts-liberation \
-&& docker-php-ext-install pdo pdo_mysql pdo_sqlite mbstring zip bcmath exif pcntl \
+    && docker-php-ext-install pdo pdo_mysql pdo_sqlite mbstring zip bcmath exif pcntl \
     && a2enmod rewrite \
     && sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf \
     && sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf \
@@ -38,8 +38,9 @@ RUN npx playwright install --with-deps chromium
 
 RUN composer dump-autoload --optimize
 
-RUN chown -R www-data:www-data storage bootstrap/cache /ms-playwright \
-    && chmod -R 775 storage bootstrap/cache /ms-playwright
+RUN touch database/database.sqlite \
+    && chown -R www-data:www-data storage bootstrap/cache database /ms-playwright \
+    && chmod -R 775 storage bootstrap/cache database /ms-playwright
 
 COPY docker/start.sh /usr/local/bin/start.sh
 RUN sed -i 's/\r$//' /usr/local/bin/start.sh && chmod +x /usr/local/bin/start.sh
