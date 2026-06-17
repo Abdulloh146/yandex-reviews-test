@@ -26,8 +26,6 @@ class YandexMapsParserService
             throw new RuntimeException('Yandex organization oid not found in URL.');
         }
 
-        $normalizedUrl = $this->normalizeYandexUrl($url, $organizationOid);
-
         $tempPath = storage_path('app/playwright-temp');
 
         if (! is_dir($tempPath)) {
@@ -65,7 +63,7 @@ class YandexMapsParserService
             [
                 $this->findNodePath(),
                 $scriptPath,
-                $normalizedUrl,
+                $url,
             ],
             base_path(),
             $env
@@ -146,16 +144,6 @@ class YandexMapsParserService
         return null;
     }
 
-    private function normalizeYandexUrl(string $url, string $oid): string
-    {
-        $decodedUrl = urldecode($url);
-
-        if (str_contains($decodedUrl, '/maps/org/')) {
-            return $url;
-        }
-
-        return 'https://yandex.uz/maps/org/' . $oid . '/reviews/';
-    }
 
     private function findNodePath(): string
     {
