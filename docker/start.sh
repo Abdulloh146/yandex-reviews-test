@@ -13,6 +13,7 @@ php artisan cache:clear
 php artisan route:clear
 php artisan view:clear
 
-php artisan migrate --force || true
+php artisan migrate --force
+php artisan db:seed --force || true
 
 exec apache2-foreground

@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y \
     libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 \
     libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 \
     libpangocairo-1.0-0 libpango-1.0-0 libcairo2 fonts-liberation \
-    && docker-php-ext-install pdo pdo_mysql mbstring zip bcmath exif pcntl \
+&& docker-php-ext-install pdo pdo_mysql pdo_sqlite mbstring zip bcmath exif pcntl \
     && a2enmod rewrite \
     && sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf \
     && sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf \
