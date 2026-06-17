@@ -1,0 +1,12 @@
+.git
+.github
+.env
+node_modules
+vendor
+storage/logs/*
+storage/app/parser-debug/*
+storage/app/playwright-temp/*
+README_*.txt
+ENV_*.txt
+NODE_CHECK.txt
+*.log
