@@ -2,9 +2,9 @@ import axios from 'axios';
 
 const api = axios.create({
     baseURL: '/api',
+    timeout: 1200000,
     headers: {
         Accept: 'application/json',
-        'X-Requested-With': 'XMLHttpRequest',
     },
 });
 

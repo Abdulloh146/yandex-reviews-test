@@ -1,0 +1,8 @@
+<?php
+
+use Illuminate\Support\Facades\Route;
+
+Route::view('/', 'dashboard');
+
+// Agar boshqa page yo'q bo'lsa, buni ham qoldirish mumkin:
+// Route::fallback(fn () => view('dashboard'));

@@ -11,11 +11,11 @@ class Organization extends Model
     protected $fillable = [
         'user_id',
         'yandex_url',
-        'yandex_place_id',
         'name',
         'average_rating',
         'ratings_count',
         'reviews_count',
+        'parsed_reviews_count',
         'parse_status',
         'parse_error',
         'last_parsed_at',
@@ -23,8 +23,9 @@ class Organization extends Model
 
     protected $casts = [
         'average_rating' => 'float',
-        'ratings_count'  => 'integer',
-        'reviews_count'  => 'integer',
+        'ratings_count' => 'integer',
+        'reviews_count' => 'integer',
+        'parsed_reviews_count' => 'integer',
         'last_parsed_at' => 'datetime',
     ];
 

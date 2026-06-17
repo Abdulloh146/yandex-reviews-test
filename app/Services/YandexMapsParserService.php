@@ -3,12 +3,18 @@
 namespace App\Services;
 
 use RuntimeException;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 
 class YandexMapsParserService
 {
     public function parse(string $url): array
     {
+        // 599+ review uchun 5 minut yetmayapti, shuning uchun 10 minut.
+        @set_time_limit(720);
+        @ini_set('max_execution_time', '720');
+        @ini_set('memory_limit', '1024M');
+
         $scriptPath = base_path('scripts/yandex-parser.cjs');
 
         if (! file_exists($scriptPath)) {
@@ -21,23 +27,35 @@ class YandexMapsParserService
             mkdir($tempPath, 0777, true);
         }
 
-        $nodePath = $this->findNodePath();
+        $userProfile = getenv('USERPROFILE') ?: ($_SERVER['USERPROFILE'] ?? $tempPath);
+        $localAppData = getenv('LOCALAPPDATA') ?: ($userProfile . '\\AppData\\Local');
 
         $env = array_merge($_ENV, $_SERVER, [
             'TEMP' => $tempPath,
             'TMP' => $tempPath,
             'TMPDIR' => $tempPath,
-            'NODE_OPTIONS' => '',
-            'SystemRoot' => getenv('SystemRoot') ?: 'C:\\Windows',
-            'WINDIR' => getenv('WINDIR') ?: 'C:\\Windows',
+            'NODE_OPTIONS' => '--max-old-space-size=2048',
+
+            // 10 minutgacha ishlasin.
+            'YANDEX_MAX_RUNTIME_MS' => env('YANDEX_MAX_RUNTIME_MS', '600000'),
+            'YANDEX_MAX_REVIEWS' => env('YANDEX_MAX_REVIEWS', '650'),
+            'YANDEX_MAX_SCROLLS' => env('YANDEX_MAX_SCROLLS', '5000'),
+            'YANDEX_SCROLL_WAIT_MS' => env('YANDEX_SCROLL_WAIT_MS', '180'),
+
+            // false bo'lsa, hammasini ololmasa ham saqlaydi va warning beradi.
+            'YANDEX_REQUIRE_ALL_REVIEWS' => env('YANDEX_REQUIRE_ALL_REVIEWS', false) ? '1' : '0',
+            'YANDEX_DEBUG' => env('YANDEX_DEBUG', true) ? '1' : '0',
+
+            'SystemRoot' => getenv('SystemRoot') ?: ($_SERVER['SystemRoot'] ?? 'C:\\Windows'),
+            'WINDIR' => getenv('WINDIR') ?: ($_SERVER['WINDIR'] ?? 'C:\\Windows'),
             'PATH' => getenv('PATH') ?: ($_SERVER['PATH'] ?? ''),
-            'USERPROFILE' => getenv('USERPROFILE') ?: 'C:\\Users\\ABOBUS',
-            'LOCALAPPDATA' => getenv('LOCALAPPDATA') ?: 'C:\\Users\\ABOBUS\\AppData\\Local',
+            'USERPROFILE' => $userProfile,
+            'LOCALAPPDATA' => $localAppData,
         ]);
 
         $process = new Process(
             [
-                $nodePath,
+                $this->findNodePath(),
                 $scriptPath,
                 $url,
             ],
@@ -45,14 +63,28 @@ class YandexMapsParserService
             $env
         );
 
-        $process->setTimeout(600);
-        $process->setIdleTimeout(600);
-        $process->run();
+        // Runtime 600 sekund + 60 sekund zapas.
+        $process->setTimeout(660);
+        $process->setIdleTimeout(null);
+
+        try {
+            $process->run();
+        } catch (ProcessTimedOutException $e) {
+            throw new RuntimeException(
+                'Parser timeout. 10 minut ichida tugamadi. Yandex juda sekin ishlayapti yoki bot protection blok qilyapti.'
+            );
+        }
 
         $output = trim($process->getOutput());
         $errorOutput = trim($process->getErrorOutput());
 
         if (! $process->isSuccessful()) {
+            $decoded = json_decode($output, true);
+
+            if (is_array($decoded) && isset($decoded['error'])) {
+                throw new RuntimeException($decoded['error']);
+            }
+
             throw new RuntimeException(
                 $output ?: $errorOutput ?: 'Parser process failed.'
             );
@@ -61,11 +93,18 @@ class YandexMapsParserService
         $decoded = json_decode($output, true);
 
         if (! is_array($decoded)) {
-            throw new RuntimeException('Parser returned invalid JSON: ' . $output);
+            throw new RuntimeException(
+                'Parser returned invalid JSON. STDOUT: '
+                . mb_substr($output, 0, 2000)
+                . ' STDERR: '
+                . mb_substr($errorOutput, 0, 2000)
+            );
         }
 
         if (($decoded['success'] ?? false) !== true) {
-            throw new RuntimeException(json_encode($decoded, JSON_UNESCAPED_UNICODE));
+            throw new RuntimeException(
+                $decoded['error'] ?? json_encode($decoded, JSON_UNESCAPED_UNICODE)
+            );
         }
 
         if (! isset($decoded['data']) || ! is_array($decoded['data'])) {

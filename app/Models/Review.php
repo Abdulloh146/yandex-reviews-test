@@ -19,7 +19,7 @@ class Review extends Model
     ];
 
     protected $casts = [
-        'rating'      => 'float',
+        'rating' => 'float',
         'review_date' => 'date',
     ];
 

@@ -1,5 +1,27 @@
 <template>
     <div class="min-h-screen bg-slate-100">
+        <div
+            v-if="showParsingOverlay"
+            class="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-sm flex items-center justify-center px-4"
+        >
+            <div class="w-full max-w-md bg-white rounded-3xl shadow-2xl p-7 text-center">
+                <div class="mx-auto mb-5 h-14 w-14 rounded-full border-4 border-slate-200 border-t-blue-600 animate-spin"></div>
+
+                <h3 class="text-xl font-bold text-slate-900">
+                    Yandex Maps qidirilyapti...
+                </h3>
+
+                <p class="mt-2 text-sm text-slate-500 leading-6">
+                    Карточка организации ochilyapti va отзывы yig‘ilyapti.
+                    300/600 ta отзыв bo‘lsa, bu bir necha daqiqa vaqt olishi mumkin.
+                </p>
+
+                <div class="mt-5 rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-700">
+                    Sahifani yopmang. Parser tugashi bilan отзывlar avtomatik chiqadi.
+                </div>
+            </div>
+        </div>
+
         <header class="bg-white border-b">
             <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
                 <div>
@@ -13,7 +35,8 @@
 
                 <button
                     @click="logout"
-                    class="px-4 py-2 bg-slate-900 text-white rounded-xl"
+                    :disabled="showParsingOverlay"
+                    class="px-4 py-2 bg-slate-900 text-white rounded-xl disabled:opacity-60"
                 >
                     Выйти
                 </button>
@@ -30,8 +53,9 @@
                     <input
                         v-model="yandexUrl"
                         type="url"
-                        class="w-full border rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
+                        class="w-full border rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100"
                         placeholder="https://yandex.ru/maps/org/..."
+                        :disabled="showParsingOverlay"
                     >
 
                     <div v-if="error" class="bg-red-50 text-red-700 px-4 py-3 rounded-xl text-sm">
@@ -42,22 +66,22 @@
                         {{ success }}
                     </div>
 
-                    <div class="flex gap-3">
+                    <div class="flex gap-3 flex-wrap">
                         <button
                             type="submit"
-                            :disabled="saving"
+                            :disabled="showParsingOverlay || !yandexUrl"
                             class="px-5 py-3 bg-blue-600 text-white rounded-xl font-semibold disabled:opacity-60"
                         >
-                            {{ saving ? 'Сохраняем и парсим...' : 'Сохранить' }}
+                            {{ saving ? 'Saqlanyapti...' : 'Сохранить' }}
                         </button>
 
                         <button
                             type="button"
                             @click="refreshOrganization"
-                            :disabled="refreshing || !organization"
+                            :disabled="showParsingOverlay || !organization"
                             class="px-5 py-3 bg-slate-900 text-white rounded-xl font-semibold disabled:opacity-60"
                         >
-                            {{ refreshing ? 'Парсим...' : 'Обновить данные' }}
+                            {{ refreshing ? 'Yangilanyapti...' : 'Обновить данные' }}
                         </button>
                     </div>
                 </form>
@@ -81,12 +105,14 @@
 
                     <div class="bg-slate-100 rounded-xl p-4">
                         <div class="text-sm text-slate-500">Оценок</div>
-                        <div class="font-bold">{{ organization.ratings_count }}</div>
+                        <div class="font-bold">{{ organization.ratings_count ?? 0 }}</div>
                     </div>
 
                     <div class="bg-slate-100 rounded-xl p-4">
                         <div class="text-sm text-slate-500">Отзывов</div>
-                        <div class="font-bold">{{ organization.reviews_count }}</div>
+                        <div class="font-bold">
+                            {{ organization.parsed_reviews_count ?? 0 }} / {{ organization.reviews_count ?? 0 }}
+                        </div>
                     </div>
                 </div>
 
@@ -95,10 +121,10 @@
                 </div>
 
                 <div
-                    v-if="organization?.parse_status === 'pending' || organization?.parse_status === 'processing'"
+                    v-if="isParsing"
                     class="mt-3 bg-blue-50 text-blue-700 px-4 py-3 rounded-xl text-sm"
                 >
-                    Парсинг выполняется в фоне. Страница не зависнет, дождитесь завершения.
+                    Parser background rejimda ishlayapti. Tugashi bilan отзывlar avtomatik yangilanadi.
                 </div>
 
                 <div
@@ -117,16 +143,17 @@
             </section>
 
             <section class="bg-white rounded-2xl shadow p-6">
-                <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center justify-between gap-3 mb-4">
                     <h2 class="text-lg font-bold">
                         Отзывы
                     </h2>
 
                     <button
                         @click="loadReviews(currentPage)"
-                        class="px-4 py-2 bg-slate-200 rounded-xl"
+                        :disabled="reviewsLoading"
+                        class="px-4 py-2 bg-slate-200 rounded-xl disabled:opacity-60"
                     >
-                        Обновить список
+                        {{ reviewsLoading ? 'Yangilanyapti...' : 'Обновить список' }}
                     </button>
                 </div>
 
@@ -163,10 +190,10 @@
                     </div>
                 </div>
 
-                <div v-if="lastPage > 1" class="flex items-center gap-2 mt-6">
+                <div v-if="lastPage > 1" class="flex items-center gap-2 mt-6 flex-wrap">
                     <button
                         @click="loadReviews(currentPage - 1)"
-                        :disabled="currentPage <= 1"
+                        :disabled="currentPage <= 1 || reviewsLoading"
                         class="px-4 py-2 bg-slate-200 rounded-xl disabled:opacity-50"
                     >
                         Назад
@@ -178,7 +205,7 @@
 
                     <button
                         @click="loadReviews(currentPage + 1)"
-                        :disabled="currentPage >= lastPage"
+                        :disabled="currentPage >= lastPage || reviewsLoading"
                         class="px-4 py-2 bg-slate-200 rounded-xl disabled:opacity-50"
                     >
                         Вперёд
@@ -190,7 +217,7 @@
 </template>
 
 <script setup>
-import { onMounted, onBeforeUnmount, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import api from '../axios';
 
@@ -202,7 +229,6 @@ const yandexUrl = ref('');
 const reviews = ref([]);
 const currentPage = ref(1);
 const lastPage = ref(1);
-const totalParsedReviews = ref(0);
 
 const saving = ref(false);
 const refreshing = ref(false);
@@ -212,6 +238,15 @@ const error = ref('');
 const success = ref('');
 
 let pollingTimer = null;
+
+const isParsing = computed(() => {
+    return organization.value?.parse_status === 'pending'
+        || organization.value?.parse_status === 'processing';
+});
+
+const showParsingOverlay = computed(() => {
+    return saving.value || refreshing.value || isParsing.value;
+});
 
 function startPolling() {
     stopPolling();
@@ -231,7 +266,7 @@ function startPolling() {
             error.value = organization.value?.parse_error || 'Parsing failed.';
             success.value = '';
         }
-    }, 2000);
+    }, 3000);
 }
 
 function stopPolling() {
@@ -244,10 +279,11 @@ function stopPolling() {
 async function loadOrganization() {
     try {
         const { data } = await api.get('/organization');
+
         organization.value = data.organization;
 
         if (organization.value) {
-            yandexUrl.value = organization.value.yandex_url;
+            yandexUrl.value = organization.value.yandex_url || '';
         }
     } catch (e) {
         console.error(e);
@@ -265,18 +301,12 @@ async function saveOrganization() {
         });
 
         organization.value = data.organization;
+        success.value = data.message || 'Parsing started.';
 
-        if (data.organization?.parse_status === 'success') {
-            success.value = data.message;
+        if (organization.value?.parse_status === 'success') {
             await loadReviews(1);
-        } else if (
-            data.organization?.parse_status === 'pending' ||
-            data.organization?.parse_status === 'processing'
-        ) {
-            success.value = data.message || 'Parsing started in background.';
-            startPolling();
         } else {
-            error.value = data.organization?.parse_error || data.message || 'Parsing failed.';
+            startPolling();
         }
     } catch (e) {
         error.value = e.response?.data?.message || 'Ошибка сохранения';
@@ -294,18 +324,12 @@ async function refreshOrganization() {
         const { data } = await api.post('/organization/refresh');
 
         organization.value = data.organization;
+        success.value = data.message || 'Refresh started.';
 
-        if (data.organization?.parse_status === 'success') {
-            success.value = data.message;
+        if (organization.value?.parse_status === 'success') {
             await loadReviews(1);
-        } else if (
-            data.organization?.parse_status === 'pending' ||
-            data.organization?.parse_status === 'processing'
-        ) {
-            success.value = data.message || 'Parsing started in background.';
-            startPolling();
         } else {
-            error.value = data.organization?.parse_error || data.message || 'Parsing failed.';
+            startPolling();
         }
     } catch (e) {
         error.value = e.response?.data?.message || 'Ошибка парсинга';
@@ -325,10 +349,9 @@ async function loadReviews(page = 1) {
             },
         });
 
-        reviews.value = data.data;
-        currentPage.value = data.current_page;
-        lastPage.value = data.last_page;
-        totalParsedReviews.value = data.total || 0;
+        reviews.value = data.data || [];
+        currentPage.value = data.current_page || 1;
+        lastPage.value = data.last_page || 1;
     } catch (e) {
         console.error(e);
     } finally {
@@ -356,10 +379,7 @@ onMounted(async () => {
     await loadOrganization();
     await loadReviews(1);
 
-    if (
-        organization.value?.parse_status === 'pending' ||
-        organization.value?.parse_status === 'processing'
-    ) {
+    if (isParsing.value) {
         startPolling();
     }
 });
