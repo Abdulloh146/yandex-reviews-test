@@ -10,7 +10,6 @@ class YandexMapsParserService
 {
     public function parse(string $url): array
     {
-        // 599+ review uchun 5 minut yetmayapti, shuning uchun 10 minut.
         @set_time_limit(720);
         @ini_set('max_execution_time', '720');
         @ini_set('memory_limit', '1024M');
@@ -21,6 +20,14 @@ class YandexMapsParserService
             throw new RuntimeException('Parser script not found: ' . $scriptPath);
         }
 
+        $organizationOid = $this->extractYandexOid($url);
+
+        if (! $organizationOid) {
+            throw new RuntimeException('Yandex organization oid not found in URL.');
+        }
+
+        $normalizedUrl = $this->normalizeYandexUrl($url, $organizationOid);
+
         $tempPath = storage_path('app/playwright-temp');
 
         if (! is_dir($tempPath)) {
@@ -28,7 +35,7 @@ class YandexMapsParserService
         }
 
         $userProfile = getenv('USERPROFILE') ?: ($_SERVER['USERPROFILE'] ?? $tempPath);
-        $localAppData = getenv('LOCALAPPDATA') ?: ($userProfile . '\\AppData\\Local');
+        $localAppData = getenv('LOCALAPPDATA') ?: ($userProfile . DIRECTORY_SEPARATOR . 'AppData' . DIRECTORY_SEPARATOR . 'Local');
 
         $env = array_merge($_ENV, $_SERVER, [
             'TEMP' => $tempPath,
@@ -36,15 +43,16 @@ class YandexMapsParserService
             'TMPDIR' => $tempPath,
             'NODE_OPTIONS' => '--max-old-space-size=2048',
 
-            // 10 minutgacha ishlasin.
-            'YANDEX_MAX_RUNTIME_MS' => env('YANDEX_MAX_RUNTIME_MS', '600000'),
-            'YANDEX_MAX_REVIEWS' => env('YANDEX_MAX_REVIEWS', '650'),
-            'YANDEX_MAX_SCROLLS' => env('YANDEX_MAX_SCROLLS', '5000'),
-            'YANDEX_SCROLL_WAIT_MS' => env('YANDEX_SCROLL_WAIT_MS', '180'),
+            'YANDEX_ORG_OID' => $organizationOid,
+            'YANDEX_ORIGINAL_URL' => $url,
 
-            // false bo'lsa, hammasini ololmasa ham saqlaydi va warning beradi.
+            'YANDEX_MAX_RUNTIME_MS' => (string) env('YANDEX_MAX_RUNTIME_MS', '600000'),
+            'YANDEX_MAX_REVIEWS' => (string) env('YANDEX_MAX_REVIEWS', '650'),
+            'YANDEX_MAX_SCROLLS' => (string) env('YANDEX_MAX_SCROLLS', '5000'),
+            'YANDEX_SCROLL_WAIT_MS' => (string) env('YANDEX_SCROLL_WAIT_MS', '180'),
+
             'YANDEX_REQUIRE_ALL_REVIEWS' => env('YANDEX_REQUIRE_ALL_REVIEWS', false) ? '1' : '0',
-            'YANDEX_DEBUG' => env('YANDEX_DEBUG', true) ? '1' : '0',
+            'YANDEX_DEBUG' => env('YANDEX_DEBUG', false) ? '1' : '0',
 
             'SystemRoot' => getenv('SystemRoot') ?: ($_SERVER['SystemRoot'] ?? 'C:\\Windows'),
             'WINDIR' => getenv('WINDIR') ?: ($_SERVER['WINDIR'] ?? 'C:\\Windows'),
@@ -57,19 +65,18 @@ class YandexMapsParserService
             [
                 $this->findNodePath(),
                 $scriptPath,
-                $url,
+                $normalizedUrl,
             ],
             base_path(),
             $env
         );
 
-        // Runtime 600 sekund + 60 sekund zapas.
         $process->setTimeout(660);
         $process->setIdleTimeout(null);
 
         try {
             $process->run();
-        } catch (ProcessTimedOutException $e) {
+        } catch (ProcessTimedOutException) {
             throw new RuntimeException(
                 'Parser timeout. 10 minut ichida tugamadi. Yandex juda sekin ishlayapti yoki bot protection blok qilyapti.'
             );
@@ -86,7 +93,7 @@ class YandexMapsParserService
             }
 
             throw new RuntimeException(
-                $output ?: $errorOutput ?: 'Parser process failed.'
+                mb_substr($output ?: $errorOutput ?: 'Parser process failed.', 0, 2000)
             );
         }
 
@@ -114,9 +121,47 @@ class YandexMapsParserService
         return $decoded['data'];
     }
 
+    private function extractYandexOid(string $url): ?string
+    {
+        $decodedUrl = urldecode($url);
+
+        // Example:
+        // poi[uri]=ymapsbm1://org?oid=77229904402
+        if (preg_match('/oid=(\d+)/', $decodedUrl, $matches)) {
+            return $matches[1];
+        }
+
+        // Example:
+        // /maps/org/company_name/77229904402/
+        if (preg_match('#/maps/org/[^/]+/(\d+)#', $decodedUrl, $matches)) {
+            return $matches[1];
+        }
+
+        // Example:
+        // /maps/org/77229904402
+        if (preg_match('#/maps/org/(\d+)#', $decodedUrl, $matches)) {
+            return $matches[1];
+        }
+
+        return null;
+    }
+
+    private function normalizeYandexUrl(string $url, string $oid): string
+    {
+        $decodedUrl = urldecode($url);
+
+        if (str_contains($decodedUrl, '/maps/org/')) {
+            return $url;
+        }
+
+        return 'https://yandex.uz/maps/org/' . $oid . '/reviews/';
+    }
+
     private function findNodePath(): string
     {
         $possiblePaths = [
+            '/usr/bin/node',
+            '/usr/local/bin/node',
             'C:\\Program Files\\nodejs\\node.exe',
             'C:\\Program Files (x86)\\nodejs\\node.exe',
             'node',
